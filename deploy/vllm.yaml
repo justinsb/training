@@ -1,0 +1,97 @@
+# vLLM inference server for mightyfine evals.
+#
+# Prereqs:
+#   1. HF token secret (gemma is gated):
+#        kubectl create secret generic hf-token --from-literal=token=hf_...
+#   2. Copy the LoRA adapter onto the PVC. Easiest path: apply this file,
+#      wait for the pod, then
+#        kubectl cp outputs/sql-lora <vllm-pod>:/adapters/sql-lora
+#      and restart the deployment so vLLM picks it up at startup:
+#        kubectl rollout restart deploy/vllm
+#      (VLLM_ALLOW_RUNTIME_LORA_UPDATING=true is also set, so alternatively
+#      POST to /v1/load_lora_adapter without a restart.)
+#
+# Client side:
+#   kubectl port-forward svc/vllm 8000:8000
+#   EVAL_BACKEND=vllm python scripts/eval.py --adapter outputs/sql-lora
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vllm-adapters
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm
+  template:
+    metadata:
+      labels:
+        app: vllm
+    spec:
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          args:
+            - --model=google/gemma-4-E4B-it
+            # Serve 4-bit (NF4) to match the local load_in_4bit=True path.
+            # Quantizes in-flight at startup (slower boot, ~4x less GPU mem,
+            # lower throughput than bf16). If this architecture lacks bnb
+            # support in vLLM, drop these two flags to fall back to bf16.
+            - --quantization=bitsandbytes
+            - --load-format=bitsandbytes
+            - --max-model-len=2048
+            - --enable-lora
+            - --lora-modules=sql-lora=/adapters/sql-lora
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+            - name: VLLM_ALLOW_RUNTIME_LORA_UPDATING
+              value: "true"
+          ports:
+            - containerPort: 8000
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          volumeMounts:
+            - name: adapters
+              mountPath: /adapters
+            - name: hf-cache
+              mountPath: /root/.cache/huggingface
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 120
+            periodSeconds: 10
+            failureThreshold: 60
+      volumes:
+        - name: adapters
+          persistentVolumeClaim:
+            claimName: vllm-adapters
+        - name: hf-cache
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm
+spec:
+  selector:
+    app: vllm
+  ports:
+    - port: 8000
+      targetPort: 8000

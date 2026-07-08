@@ -6,14 +6,26 @@ objective — good enough to compare base vs fine-tuned.
 
 Base model:  python scripts/eval.py --limit 100
 Fine-tuned:  python scripts/eval.py --adapter outputs/sql-lora --limit 100
+
+No local GPU? Point at a vLLM server (see deploy/vllm.yaml) instead:
+  EVAL_BACKEND=vllm VLLM_BASE_URL=http://localhost:8000 python scripts/eval.py ...
+This also happens automatically when unsloth is not installed.
 """
 
 import argparse
 import json
+import os
 import re
 from pathlib import Path
 
-from unsloth import FastModel  # must be imported before transformers/trl
+if os.environ.get("EVAL_BACKEND") == "vllm":
+    from remote_model import FastModel
+else:
+    try:
+        from unsloth import FastModel  # must be imported before transformers/trl
+    except ImportError:
+        print("unsloth not installed — using remote vLLM backend (see VLLM_BASE_URL)")
+        from remote_model import FastModel
 
 
 def extract_sql(text: str) -> str:

@@ -160,7 +160,12 @@ def score_example(ex: dict, seed: int) -> str:
 
     gold_ever_nonempty = False
     for i in range(N_DATABASES):
-        conn = build_database(tables, lits, random.Random(seed * 1000 + i))
+        try:
+            conn = build_database(tables, lits, random.Random(seed * 1000 + i))
+        except sqlite3.Error:
+            # Malformed schema (e.g. duplicate column names in the dataset).
+            # If we can't build the database, we can't execute gold either.
+            return "gold_error"
         gold_result = run_query(conn, ex["gold"])
         pred_result = run_query(conn, ex["prediction"])
         conn.close()
