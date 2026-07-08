@@ -43,6 +43,7 @@ def load_pairs(paths: list) -> Dataset:
                 key = json.dumps(rec["prompt"], sort_keys=True)
                 if key not in seen:
                     seen.add(key)
+                    rec.pop("source", None)  # provenance metadata, not a training column
                     records.append(rec)
     return Dataset.from_list(records)
 

@@ -130,6 +130,7 @@ def main() -> None:
                         "prompt": [{"role": "user", "content": user_content}],
                         "chosen": [{"role": "assistant", "content": row["answer"]}],
                         "rejected": [{"role": "assistant", "content": wrong[0]}],
+                        "source": "gold",
                     }) + "\n")
                 continue
             if not wrong:
@@ -141,6 +142,7 @@ def main() -> None:
                 "prompt": [{"role": "user", "content": user_content}],
                 "chosen": [{"role": "assistant", "content": correct[0]}],
                 "rejected": [{"role": "assistant", "content": wrong[0]}],
+                "source": "mined",
             }) + "\n")
 
             if (i + 1) % 25 == 0:
